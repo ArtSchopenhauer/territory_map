@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+	<script src="http://malsup.github.com/jquery.form.js"></script> 
+	<style type="text/css">
+
+		html, body {
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			overflow-x: hidden;
+		}
+		#map {
+			float: left;
+			height: 100%;
+			width:100%;
+			overflow: hidden;
+		}
+		#content-window {
+			right:0;
+			font-family: 'Roboto','sans-serif';
+			height: 100%;
+			line-height: 30px;
+			padding-left: 10px;
+			min-width: 300px;
+			z-index: 100;
+			background-color: aliceblue;
+			position: absolute;
+			border: 1px solid black;
+		}
+
+		.bold {
+			font-weight: bold;
+		}
+
+		.sideTable {
+			font-size: 10pt;
+			text-align: left;
+		}
+
+		.sideTable th, td {
+			width: 120px;
+		}
+
+		.button {
+
+			width:100px;
+			height:30px;
+			color:white;
+			border:none;
+			background-color:#0284ff;
+		}
+
+		.button:hover {
+
+			width:100px;
+			height:30px;
+			color:white;
+			border:none;
+			background-color:#4fa6f7;
+		}
+
+		#legend {
+			bottom:0;
+			position:absolute;
+			z-index:200;
+			padding-left:10px;
+			min-width:200px;
+			height:10%;
+		}
+
+	</style>
+	<title>Territory Map</title>
+</head>
+<body>
+
+	<div id="map" style="z-index:0"></div>
+	<div id="content-window"><p>Click a territory.</p>
+
+	<div id="legend">
+	<table>
+	<thead>
+	<tr><th style="font-weight:normal;width:50px;background-color:#4b4e51;border:1px solid red"></th><th style="font-weight:normal;width:20px">=</th><th style="font-weight:normal;text-align:left">Currently Assigned</th></tr>
+	<tr style="height:10px"></tr>
+	<tr><th style="font-weight:normal;width:50px;background-color:#b4b9c1;border:1px solid red"></th><th style="font-weight:normal;width:20px">=</th><th style="font-weight:normal;text-align:left"> Once Assigned</th></tr>
+	</thead>
+	<tbody>	
+	</tbody>
+	</table>
+	</div>
+	</div>
+
+	<script type="text/javascript">
+
+		var map;
+		function initMap() {
+			map = new google.maps.Map(document.getElementById('map'), {
+				center: {lat: 41.36 , lng: -72.30},
+				zoom: 9
+			});
+
+			map.data.loadGeoJson('http://45.55.59.38/geojson');
+
+			var assignedTerritories = {{ assigned_territories|safe }};
+			var pastAssignments = {{ past_assignments|safe }};
+
+			function default_style() { 
+				map.data.setStyle(function(feature) {
+					var opacity = 0;
+					var color = 'red';
+					var name = feature.getProperty('name');
+
+					if (pastAssignments.indexOf(name) > -1 ){
+						opacity = .3;
+					};
+
+
+					if (assignedTerritories.indexOf(name) > -1) {
+						opacity = .7;
+					};
+
+					return /** @type {google.maps.Data.StyleOptions} */({
+						strokeColor: color,
+						strokeWeight: .75,
+						fillOpacity: opacity
+					});
+				});
+			};
+
+			default_style();
+
+			map.data.addListener('click', function(event) {
+				clicked = event.feature.getProperty('name');
+
+				map.data.setStyle(function(feature) {
+					var opacity = 0;
+					var borderColor = 'red';
+					var fillColor = 'black';
+					var name = feature.getProperty('name');
+
+					if (pastAssignments.indexOf(name) > -1 ){
+						opacity = .3;
+					};
+
+					if (assignedTerritories.indexOf(name) > -1) {
+						opacity = .7;
+					};
+
+					if (name == clicked) {
+						borderColor = 'blue';
+						fillColor = 'blue';
+						opacity = .5;
+					};
+
+					return /** @type {google.maps.Data.StyleOptions} */({
+						strokeColor: borderColor,
+						strokeWeight: .75,
+						fillOpacity: opacity,
+						fillColor: fillColor
+					});
+				});
+
+				get_data();
+
+				function showInContentWindow(text) {
+					var sidediv = document.getElementById('content-window');
+					sidediv.innerHTML = text;
+				};
+
+
+				function get_data() { 
+					$.post("http://45.55.59.38/status", {territory: clicked}, function(data) {
+						var data_parsed = JSON.parse(data);
+						var assigned = data_parsed["currently_assigned"];
+						var all_assignments = data_parsed["all_assignments"];
+						var table_rows = '';
+
+						for (i=0; i < all_assignments.length; i++) {
+							var amb = all_assignments[i].amb;
+							var start = all_assignments[i].start;
+							var end = all_assignments[i].end;
+							var row = '<tr><td>' + start + '</td><td>' + end + '</td><td>' + amb + '</td></tr>';
+							table_rows += row;
+						};
+
+						var assign_form = '<select style="height:30px" name="assign1">{% for amb in ambs %}<option value="' + clicked + '*' + '{{ amb }}' + '"> {{ amb }} </option> {% endfor %} </select>' + '</br>' +
+						'<div style="margin-left:auto;margin-right:auto;margin-top:20px;"><button class="button" type="submit">Assign</button></form>';
+
+						var unassign_form = '<input type="hidden" name="unassign2" value="' + clicked + '"></br><div style="margin-left:auto;margin-right:auto;margin-bottom:0px;"><button style="margin-top:23px" class="button" type="submit">Unassign</button></form>';
+
+						var form_section = assign_form;
+
+						if (assignedTerritories.indexOf(clicked) > -1) {
+							form_section = unassign_form;
+						};
+
+						var html = '<p> <span class="bold">Name:</span> ' + '</br>' + clicked + '</br>' + '<span class=bold>Assigned To:</span> ' + '</br>' + assigned +
+						'<form id="myForm" action="/" method="post">' + form_section + '</br></br>' +
+						'<table class="sideTable"><thead><tr><th>Start</th><th>End</th><th style="width:220px">Ambassador</th></tr></thead><tbody>' + table_rows + '</tbody></table>' +
+						'<div id="legend"><table><thead><tr><th style="font-weight:normal;width:50px;background-color:#4b4e51;border:1px solid red"></th><th style="font-weight:normal;width:20px">=</th><th style="font-weight:normal;text-align:left">Currently Assigned</th></tr><tr style="height:10px"></tr><tr><th style="font-weight:normal;width:50px;background-color:#b4b9c1;border:1px solid red"></th><th style="font-weight:normal;width:20px">=</th><th style="font-weight:normal;text-align:left"> Once Assigned</th></tr></thead><tbody></tbody></table></div></div>'
+
+						showInContentWindow(html);
+
+						$('#myForm').ajaxForm(function(data) {
+
+							if (data != "Valid") {
+								alert(data);
+							}
+
+							else if (form_section == assign_form) {
+								assignedTerritories.push(clicked);
+							}
+
+							else if (form_section == unassign_form) {
+								if (assignedTerritories.indexOf(clicked) > -1) {
+									var i = assignedTerritories.indexOf(clicked);
+									assignedTerritories.splice(i, 1);
+								}	
+							};
+
+							default_style();
+
+							get_data();
+
+						}); 
+
+					});
+
+				};
+
+			});
+
+		}
+
+	</script>
+	<script async defer
+	src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6PSbZ8aTDUEgBXUL7fkxtqO6c9cR_tHg&callback=initMap">
+</script>
+</body>
+</html>
